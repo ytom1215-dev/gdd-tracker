@@ -1,17 +1,12 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import japanize_matplotlib  # ← これを追加するだけ！
 from datetime import datetime, date, timedelta
 import requests
 import warnings
 
-# グラフの日本語文字化け対策
 warnings.filterwarnings('ignore')
-try:
-    plt.rcParams['font.family'] = 'Meiryo' 
-except:
-    pass
-
 st.set_page_config(page_title="積算温度 到達日推定アプリ", layout="wide")
 st.title("🌡️ 積算温度 到達日推定アプリ (ハイブリッド版)")
 
