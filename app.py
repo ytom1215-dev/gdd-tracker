@@ -129,12 +129,26 @@ fig.add_hline(
 
 # 到達日の垂直線
 if not reach_df.empty:
+    # 日付データを安全な文字列に変換
+    reach_date_str = reach_df.iloc[0]['年月日'].strftime('%Y-%m-%d')
+    
+    # 1. 垂直線を引く（テキストなし）
     fig.add_vline(
-        x=reach_df.iloc[0]['年月日'], 
+        x=reach_date_str, 
         line_dash="dot", 
-        line_color="#1f77b4", 
-        annotation_text=f"到達日 ({reach_date})", 
-        annotation_position="bottom right"
+        line_color="#1f77b4"
+    )
+    
+    # 2. テキストを別で配置する
+    fig.add_annotation(
+        x=reach_date_str, 
+        y=target_temp / 2,  # グラフの高さの半分くらいの位置
+        text=f"到達日 ({reach_date})", 
+        showarrow=False,
+        xanchor="left",
+        xshift=5,
+        font=dict(color="#1f77b4"),
+        bgcolor="rgba(255,255,255,0.7)"
     )
 
 # グラフのレイアウト設定
