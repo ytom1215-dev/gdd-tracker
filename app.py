@@ -2,10 +2,22 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
 import requests
-import plotly.graph_objects as go  # 🌟 ここが新しくなりました！
+import plotly.graph_objects as go
+import warnings
+
+warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="積算温度 到達日推定アプリ", layout="wide")
-st.title("🌡️ 積算温度 到達日推定アプリ (ハイブリッド版)")
+st.title("🌡️ 積算温度 到達日推定アプリ (5地点ハイブリッド版)")
+
+# --- 観測地点の定義（ご指定の5地点） ---
+LOCATIONS = {
+    "長島町": {"lat": 32.1883, "lon": 130.1442},
+    "根占町": {"lat": 31.1961, "lon": 130.7672},
+    "鹿屋市": {"lat": 31.3783, "lon": 130.8522},
+    "南さつま市": {"lat": 31.4150, "lon": 130.3200},
+    "金峰町大野": {"lat": 31.4360, "lon": 130.3540}
+}
 
 # 1. CSVから「平年値」を読み込む関数
 @st.cache_data
@@ -18,14 +30,16 @@ def load_csv_normals():
     df.columns = df.columns.str.strip()
     df['年月日'] = pd.to_datetime(df['年月日'])
     
+    # 1年分の平年値カレンダーを作る
     df['MM-DD'] = df['年月日'].dt.strftime('%m-%d')
     normals_df = df.groupby('MM-DD')['平年値平均気温(℃)'].mean().reset_index()
     return normals_df
 
-# 2. Open-Meteoから「今年の実績」だけを軽く読み込む関数
+# 2. Open-Meteoから「選択地点の今年の実績」だけを読み込む関数
 @st.cache_data(ttl=3600)
-def load_api_current_year(year):
-    lat, lon = 31.3783, 130.8522 # 鹿屋市（鹿児島市にする場合は 31.5600, 130.5581 に変更）
+def load_api_current_year(year, loc_name):
+    lat = LOCATIONS[loc_name]["lat"]
+    lon = LOCATIONS[loc_name]["lon"]
     
     start_str = f"{year}-01-01"
     safe_today = (date.today() - timedelta(days=2)).strftime('%Y-%m-%d')
@@ -53,21 +67,30 @@ def load_api_current_year(year):
         return pd.DataFrame()
 
 # --- メイン処理 ---
+# CSVの読み込みチェック
 try:
     df_normals = load_csv_normals()
 except FileNotFoundError:
     st.error("⚠️ 'data (1).csv' が見つかりません。アプリと同じフォルダに配置してください。")
     st.stop()
 
-current_year = date.today().year
-df_actuals = load_api_current_year(current_year)
+# サイドバー：地点の選択
+st.sidebar.header("⚙️ 設定パネル")
+selected_loc_name = st.sidebar.selectbox("📍 観測地点を選択", list(LOCATIONS.keys()))
 
+# 選択された地点の今年のデータをAPIから取得
+current_year = date.today().year
+df_actuals = load_api_current_year(current_year, selected_loc_name)
+
+# データの結合
 base_dates = pd.date_range(start=f"{current_year}-01-01", end=f"{current_year}-12-31")
 df = pd.DataFrame({"年月日": base_dates})
 df['MM-DD'] = df['年月日'].dt.strftime('%m-%d')
 
+# 平年値（CSV）を結合
 df = pd.merge(df, df_normals, on='MM-DD', how='left')
 
+# 実績（API）を結合
 if not df_actuals.empty:
     df = pd.merge(df, df_actuals, on='年月日', how='left')
 else:
@@ -76,9 +99,8 @@ else:
 df.drop(columns=['MM-DD'], inplace=True)
 
 # --- UIと計算ロジック ---
-st.sidebar.header("⚙️ 設定パネル")
 start_date = st.sidebar.date_input("📅 積算開始日", value=date(current_year, 1, 1))
-today_date = date.today() - timedelta(days=2) 
+today_date = date.today() - timedelta(days=2) # 実績として信頼できる2日前を境界にする
 
 base_temp = st.sidebar.number_input("🌱 基準温度 (℃)", value=0.0, step=0.5)
 target_temp = st.sidebar.number_input("🌡️ 目標積算温度 (℃)", value=1500, step=100)
@@ -86,6 +108,7 @@ target_temp = st.sidebar.number_input("🌡️ 目標積算温度 (℃)", value=
 calc_df = df[df['年月日'].dt.date >= start_date].copy()
 
 def get_effective_temp(row):
+    # 実績期間かつデータがあれば実績（各地点）を、なければ平年値（CSV）を採用
     if row['年月日'].date() <= today_date and not pd.isna(row['平均気温(℃)']):
         val = row['平均気温(℃)']
     else:
@@ -99,17 +122,16 @@ calc_df['積算温度'] = calc_df['適用気温'].cumsum()
 
 reach_df = calc_df[calc_df['積算温度'] >= target_temp]
 
-st.markdown("### 📍 ハイブリッド推定結果")
+st.markdown(f"### 📍 {selected_loc_name} の推定結果")
 if not reach_df.empty:
     reach_date = reach_df.iloc[0]['年月日'].date()
     st.success(f"🎉 目標の積算温度 **{target_temp}℃** に到達する推定日は **{reach_date}** です！")
 else:
     st.warning("⚠️ 期間内に到達しません。")
 
-# 🌟 ここから Plotly の新しいグラフ描画コード 🌟
+# 🌟 Plotly によるインタラクティブグラフ（バグ回避版） 🌟
 fig = go.Figure()
 
-# 積算温度のライン
 fig.add_trace(go.Scatter(
     x=calc_df['年月日'], 
     y=calc_df['積算温度'], 
@@ -118,7 +140,6 @@ fig.add_trace(go.Scatter(
     line=dict(color='#ff7f0e', width=3)
 ))
 
-# 目標温度の水平線
 fig.add_hline(
     y=target_temp, 
     line_dash="dash", 
@@ -127,22 +148,17 @@ fig.add_hline(
     annotation_position="top left"
 )
 
-# 到達日の垂直線
+# 到達日の垂直線（エラー回避の書き方）
 if not reach_df.empty:
-    # 日付データを安全な文字列に変換
     reach_date_str = reach_df.iloc[0]['年月日'].strftime('%Y-%m-%d')
     
-    # 1. 垂直線を引く（テキストなし）
-    fig.add_vline(
-        x=reach_date_str, 
-        line_dash="dot", 
-        line_color="#1f77b4"
-    )
+    # 1. 垂直線を引く
+    fig.add_vline(x=reach_date_str, line_dash="dot", line_color="#1f77b4")
     
-    # 2. テキストを別で配置する
+    # 2. テキストを別に配置する
     fig.add_annotation(
         x=reach_date_str, 
-        y=target_temp / 2,  # グラフの高さの半分くらいの位置
+        y=target_temp / 2,
         text=f"到達日 ({reach_date})", 
         showarrow=False,
         xanchor="left",
@@ -151,15 +167,13 @@ if not reach_df.empty:
         bgcolor="rgba(255,255,255,0.7)"
     )
 
-# グラフのレイアウト設定
 fig.update_layout(
     xaxis_title="日付",
     yaxis_title="積算温度 (℃)",
-    hovermode="x unified",  # マウスを乗せると詳細が出る設定
+    hovermode="x unified",
     margin=dict(l=20, r=20, t=30, b=20)
 )
 
-# グラフを表示
 st.plotly_chart(fig, use_container_width=True)
 
 with st.expander("📝 計算データの詳細を確認"):
@@ -174,6 +188,6 @@ with st.expander("📝 計算データの詳細を確認"):
     st.download_button(
         label="このデータをCSVとして保存",
         data=display_df.to_csv(index=False).encode('utf-8-sig'),
-        file_name=f"hybrid_temp_data_{date.today()}.csv",
+        file_name=f"hybrid_temp_{selected_loc_name}_{date.today()}.csv",
         mime='text/csv',
     )
