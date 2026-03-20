@@ -9,7 +9,15 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="積算温度 到達日推定アプリ", layout="wide")
 st.title("🌡️ 積算温度 到達日推定アプリ (8地点ハイブリッド版)")
-
+# --- ▼ここから追加▼ ---
+try:
+    with open("README.md", "r", encoding="utf-8") as f:
+        readme_content = f.read()
+    with st.expander("📖 このアプリの使い方を見る (README)"):
+        st.markdown(readme_content)
+except FileNotFoundError:
+    pass
+# --- ▲ここまで追加▲ ---
 # --- 観測地点の定義（8地点分の緯度経度） ---
 LOCATIONS = {
     "南さつま市": {"lat": 31.4150, "lon": 130.3200},
