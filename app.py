@@ -10,6 +10,19 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="積算温度 到達日推定アプリ", layout="wide")
 st.title("🌡️ 積算温度 到達日推定アプリ (年次選択・5地点版)")
 
+
+# --- ▼ここから追加▼ ---
+try:
+    with open("README.md", "r", encoding="utf-8") as f:
+        readme_content = f.read()
+    with st.expander("📖 このアプリの使い方を見る (README)"):
+        st.markdown(readme_content)
+except FileNotFoundError:
+    pass
+# --- ▲ここまで追加▲ ---
+
+# (この下は元々の LOCATIONS = {...} が続きます)
+
 LOCATIONS = {
     "長島町": {"lat": 32.1883, "lon": 130.1442},
     "根占町": {"lat": 31.1961, "lon": 130.7672},
